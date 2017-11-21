@@ -1,0 +1,159 @@
+---
+title: "Practical machine learning project"
+author: "Isabelle You"
+date: "November 20, 2017"
+output: html_document
+---
+
+## Project introduction
+
+### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### Data source
+
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+### Goal
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+## Get and load data
+
+```{r, warning=FALSE, echo=TRUE}
+
+fileurl="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileurl,destfile="~/R/coursera/pml-training.csv")
+datedownloaded=date()
+
+training=read.csv("~/R/coursera/pml-training.csv", na.strings=c("NA", ""))
+
+fileurl="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileurl,destfile="~/R/coursera/pml-testing.csv")
+datedownloaded=date()
+
+testing=read.csv("~/R/coursera/pml-testing.csv", na.strings=c("NA", ""))
+```
+
+## clean up the training and testing data
+
+Remove columns of the training set that contain over 50% of missing values.
+
+```{r}
+training=training[, colSums(is.na(training))<(nrow(training)/2)]
+```
+Remove the 1st, 3rd, and 4th columns from the the training set and the testing set
+
+```{r}
+training=training[,-c(1,3,4)]
+```
+Now the training dataset has 19622 rows and 57 variables and the testing dataset has 20 rows and 57 varaibles.
+
+
+
+## Partition the training dataset into two datasets: 70% into plmTrain and 30% into pmlTest
+
+```{r, warning=FALSE}
+library(caret); library(ggplot2)
+set.seed(123)
+inTrain=createDataPartition(training$classe, p=0.7, list=FALSE)
+
+pmlTrain=training[inTrain,]
+pmlTest=training[-inTrain,]
+
+dim(pmlTrain); dim(pmlTest)
+```
+
+
+## Remove zero- and near zero-variance predictors
+
+```{r}
+nzv <- nearZeroVar(pmlTrain)
+pmlTrain<- pmlTrain[, -nzv]
+pmlTest=pmlTest[,-nzv]
+dim(pmlTrain);dim(pmlTest)
+```
+## Prediction with Decision Trees
+
+```{r, warning=FALSE}
+set.seed(1234)
+library(rpart)
+mod1=rpart(classe~., data=pmlTrain, method="class")
+
+pred_mod1=predict(mod1, pmlTest, type="class")
+cfm_mod1=confusionMatrix(pred_mod1, pmlTest$classe)
+cfm_mod1$overall["Accuracy"]
+```
+Prediction with decision tree confusion matrix accuracy is `r cfm_mod1$overall["Accuracy"] `.
+
+## Prediction with Random forests
+
+```{r, warning=FALSE}
+set.seed(1234)
+library(randomForest)
+mod2=randomForest(classe~., data=pmlTrain)
+pred_mod2=predict(mod2, pmlTest, type="class")
+cfm_mod2=confusionMatrix(pred_mod2, pmlTest$classe)
+cfm_mod2$overall["Accuracy"]
+plot(mod2)
+```
+
+Prediction with random forests confusion matrix accuracy is `r cfm_mod2$overall["Accuracy"] `.
+
+## Prediction with Generalized boosted regression
+
+```{r,warning=FALSE}
+set.seed(1234)
+library(caret)
+
+fitControl=trainControl(method="cv",
+                       number=5,
+                       repeats = 1)
+                       
+mod3=train(classe~., data=pmlTrain, method="gbm",
+          trControl=fitControl,
+           verbose=FALSE)
+
+pred_mod3=predict(mod3, pmlTest)
+cfm_mod3=confusionMatrix(pred_mod3, pmlTest$classe)
+cfm_mod3$overall["Accuracy"]
+plot(mod3, ylim=c(0.9,1))
+```
+Prediction with generalized boosted regression confusion matrix accuracy is `r cfm_mod3$overall["Accuracy"] `.
+
+## Prediction results on the testing data
+
+Random Forests gave an accuracy in the pmlTest of 99.81%, which was more accurate than Decision Trees or GBM.
+
+### clean up the testing dataset to get the same predictors as the training dataset
+
+```{r}
+columnlist=colnames(pmlTrain[,-56])
+datTest=testing[,colnames(testing) %in% columnlist]
+
+```
+coerce the data into the same type
+
+```{r}
+for (i in 1:length(datTest) ) {
+    for(j in 1:length(pmlTrain)) {
+        if( length( grep(names(pmlTrain[i]), names(datTest)[j]) ) == 1)  {
+            class(datTest[j]) <- class(pmlTrain[i])
+        }      
+    }      
+}
+
+# To get the same class between datTest and pmlTrain
+datTest <- rbind(pmlTrain[2, -56] , datTest)
+datTest <- datTest[-1,]
+```
+
+```{r}
+pred_test=predict(mod2, datTest, type="class")
+pred_test
+```
+
